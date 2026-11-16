@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  daytrack:
+    build: .
+    container_name: daytrack
+    ports:
+      - "3001:3001"
+    volumes:
+      - daytrack-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_PATH=/app/data/daytrack.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  daytrack-data:
+    name: daytrack-data
+
+# For ReleaseGuard test deployment (separate data volume, separate port):
+#   docker run -d --name daytrack-test -p 3002:3001 -v daytrack-test-data:/app/data daytrack
+# This uses a completely separate SQLite volume from your personal data.
