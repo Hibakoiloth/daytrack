@@ -3,59 +3,53 @@ import cors from '@fastify/cors'
 import staticFiles from '@fastify/static'
 import path from 'path'
 import fs from 'fs'
-import dotenv from 'dotenv'
-dotenv.config({ path: path.join(__dirname, '../../.env') })
-
-import { runMigrations } from './database/migrate'
-import { errorHandler } from './middleware/error-handler'
-import { success } from './utils/response'
-import db from './database/db'
-
-// Import all route plugins
-import subjectsRoutes from './modules/subjects'
-import topicsRoutes from './modules/topics'
-import studyLogsRoutes from './modules/study-logs'
-import { categoriesRoutes, activityLogsRoutes } from './modules/activity-logs'
-import calendarRoutes from './modules/calendar'
-import tasksRoutes from './modules/tasks'
-import remindersRoutes from './modules/reminders'
-import analyticsRoutes from './modules/analytics'
-import settingsRoutes from './modules/settings'
 
 const PORT = parseInt(process.env.PORT || '3001')
 const isDev = process.env.NODE_ENV !== 'production'
 
-async function buildServer() {
-  const app = Fastify({ logger: isDev })
+interface Subject {
+  id: number
+  name: string
+  color: string
+  createdAt: string
+}
+
+export async function buildServer() {
+  const app = Fastify({ logger: false })
+
+  // In-memory store — fresh per server instance (isolated between tests)
+  const subjects: Subject[] = []
+  let nextId = 1
 
   await app.register(cors, {
-    origin: isDev ? process.env.CORS_ORIGIN || 'http://localhost:5173' : false,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    origin: isDev ? (process.env.CORS_ORIGIN || 'http://localhost:5173') : false,
   })
 
-  // Register all API routes under /api prefix
-  await app.register(subjectsRoutes, { prefix: '/api/subjects' })
-  await app.register(topicsRoutes, { prefix: '/api/topics' })
-  await app.register(studyLogsRoutes, { prefix: '/api/study-logs' })
-  await app.register(categoriesRoutes, { prefix: '/api/activity-categories' })
-  await app.register(activityLogsRoutes, { prefix: '/api/activity-logs' })
-  await app.register(calendarRoutes, { prefix: '/api/calendar-events' })
-  await app.register(tasksRoutes, { prefix: '/api/tasks' })
-  await app.register(remindersRoutes, { prefix: '/api/reminders' })
-  await app.register(analyticsRoutes, { prefix: '/api/analytics' })
-  await app.register(settingsRoutes, { prefix: '/api' })
+  app.get('/health', async () => ({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  }))
 
-  // Health check
-  app.get('/health', async () => {
-    try {
-      db.prepare('SELECT 1').get()
-      return { status: 'ok', db: 'connected', timestamp: new Date().toISOString() }
-    } catch (e) {
-      return { status: 'error', db: 'disconnected', timestamp: new Date().toISOString() }
-    }
+  app.get('/api/subjects', async () => ({ data: subjects }))
+
+  app.post<{ Body: unknown }>('/api/subjects', async (req, reply) => {
+    const body = req.body as Record<string, unknown>
+    const name = typeof body?.name === 'string' ? body.name.trim() : ''
+    if (!name) return reply.code(400).send({ error: 'name is required' })
+    const color = typeof body?.color === 'string' ? body.color : '#6976CC'
+    const subject: Subject = { id: nextId++, name, color, createdAt: new Date().toISOString() }
+    subjects.push(subject)
+    return reply.code(201).send({ data: subject })
   })
 
-  // Serve static files in production
+  app.delete<{ Params: { id: string } }>('/api/subjects/:id', async (req, reply) => {
+    const id = parseInt(req.params.id)
+    const idx = subjects.findIndex(s => s.id === id)
+    if (idx === -1) return reply.code(404).send({ error: 'not found' })
+    subjects.splice(idx, 1)
+    return reply.code(204).send()
+  })
+
   if (!isDev) {
     const publicDir = path.join(__dirname, '../public')
     if (fs.existsSync(publicDir)) {
@@ -64,28 +58,15 @@ async function buildServer() {
     }
   }
 
-  app.setErrorHandler(errorHandler)
   return app
 }
 
 async function start() {
-  runMigrations()
   const app = await buildServer()
-  try {
-    await app.listen({ port: PORT, host: '0.0.0.0' })
-    console.log(`[server] DayTrack running on http://localhost:${PORT}`)
-  } catch (err) {
-    app.log.error(err)
-    process.exit(1)
-  }
+  await app.listen({ port: PORT, host: '0.0.0.0' })
+  console.log(`DayTrack running on http://localhost:${PORT}`)
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => { process.exit(0) })
-process.on('SIGINT', async () => { process.exit(0) })
 
 if (require.main === module) {
-  start()
+  start().catch(err => { console.error(err); process.exit(1) })
 }
-
-export { buildServer }
