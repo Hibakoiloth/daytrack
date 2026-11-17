@@ -8,9 +8,6 @@ const PORT = parseInt(process.env.PORT || '3001')
 const isDev = process.env.NODE_ENV !== 'production'
 
 
-// BUG: type error — remove this line to fix the build
-const _broken: number = "this string breaks the build"
-
 interface Subject {
   id: number
   name: string
