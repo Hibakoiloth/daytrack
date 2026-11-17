@@ -7,6 +7,10 @@ import fs from 'fs'
 const PORT = parseInt(process.env.PORT || '3001')
 const isDev = process.env.NODE_ENV !== 'production'
 
+
+// BUG: type error — remove this line to fix the build
+const _broken: number = "this string breaks the build"
+
 interface Subject {
   id: number
   name: string
@@ -67,6 +71,4 @@ async function start() {
   console.log(`DayTrack running on http://localhost:${PORT}`)
 }
 
-if (require.main === module) {
-  start().catch(err => { console.error(err); process.exit(1) })
-}
+start().catch(err => { console.error(err); process.exit(1) })
